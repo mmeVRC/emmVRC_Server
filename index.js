@@ -10,6 +10,13 @@ const https = require('https');
 const http = require('http');
 const fs = require('fs');
 const emmVRCDLL = fs.readFileSync('webroot/downloads/emmVRC.dll', {encoding: 'base64'});
+const rateLimit = require("express-rate-limit");
+
+const limiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minutes
+  max: 10, // limit each IP to 100 requests per windowMs
+  message: '{status: "Rate-limited"}'
+});
 
 mongo.connect(url, {
     useNewUrlParser: true,
@@ -19,7 +26,7 @@ mongo.connect(url, {
     console.error(err)
     return
   }
-    const db = client.db('emmVRC')
+    const db = client.db('mmeVRC')
     const tokens = db.collection('tokens')
     const messages = db.collection('messages')
     const avatars = db.collection('avatars')
@@ -76,7 +83,7 @@ mongo.connect(url, {
     })
 
 
-    app.post(`/api/authentication/login`, (req, res)=>{
+    app.post(`/api/authentication/login`,limiter, (req, res)=>{
         blocked.findOne({userid: req.body.username}, (err, item)=>{
             if(item){
                 console.log("user is blocked!");
@@ -98,7 +105,7 @@ mongo.connect(url, {
         res.json({status: "OK"});
     })
 
-    app.get(`/api/avatar`, (req, res)=>{
+    app.get(`/api/avatar`,limiter, (req, res)=>{
         avatars.find({userid: req.userid}).toArray((err, items)=>{
             items.forEach(avatar=>{
                 delete avatar.userid;
@@ -109,7 +116,7 @@ mongo.connect(url, {
         })
     })
 
-    app.post(`/api/avatar/search`, (req, res)=>{
+    app.post(`/api/avatar/search`,limiter, (req, res)=>{
         avatars.find({'$or': [{'avatar_author_name': new RegExp(req.body.query, 'i')}, {'avatar_name': new RegExp(req.body.query, 'i')}]}).toArray((err,items)=>{
             items.forEach(avatar=>{
                 delete avatar.userid;
@@ -121,12 +128,13 @@ mongo.connect(url, {
         })
     })
 
-    app.post(`/api/avatar`, (req, res)=>{
-        avatars.insertOne({'avatar_name': req.body.avatar_name, 'avatar_id': req.body.avatar_id, 'avatar_asset_url': req.body.avatar_asset_url, 'avatar_thumbnail_image_url': req.body.avatar_thumbnail_image_url, 'avatar_author_id': req.body.avatar_author_id, 'avatar_category': req.body.avatar_category, 'avatar_author_name': req.body.avatar_author_name, 'avatar_public': req.body.avatar_public, 'avatar_supported_platforms': req.body.avatar_supported_platforms, userid: req.userid}, (err, result)=>{
-            if(err) return res.json({"status": "ERR"});
-            res.json({"status": "OK"});
-        })
-        
+    app.post(`/api/avatar`,limiter, (req, res)=>{
+	if(req.body.avatar_asset_url.startsWith('https://api.vrchat.cloud/') && req.body.avatar_thumbnail_image_url.startsWith('https://api.vrchat.cloud/')) {
+        	avatars.insertOne({'avatar_name': req.body.avatar_name, 'avatar_id': req.body.avatar_id, 'avatar_asset_url': req.body.avatar_asset_url, 'avatar_thumbnail_image_url': req.body.avatar_thumbnail_image_url, 'avatar_author_id': req.body.avatar_author_id, 'avatar_category': req.body.avatar_category, 'avatar_author_name': req.body.avatar_author_name, 'avatar_public': req.body.avatar_public, 'avatar_supported_platforms': req.body.avatar_supported_platforms, userid: req.userid}, (err, result)=>{
+        	    if(err) return res.json({"status": "ERR"});
+        	    res.json({"status": "OK"});
+        	})
+        }
     })
 
     app.delete(`/api/avatar`, (req, res)=>{
@@ -136,7 +144,7 @@ mongo.connect(url, {
         })
     })
 
-    app.post(`/api/message`, (req, res)=>{
+    app.post(`/api/message`,limiter, (req, res)=>{
         var messageId = uuidv4();
         messages.insertOne({sentTo: req.body.recipient, 'rest_message_id': messageId, 'rest_message_sender_name': req.username, 'rest_message_sender_id': req.userid, rest_message_body: req.body.body, 'rest_message_created': Math.floor(Date.now() / 1000), 'rest_message_icon': "none"}, (err, result)=>{
             if(err) res.json({status: "ERR"});
@@ -166,17 +174,17 @@ mongo.connect(url, {
 
 const httpServer = http.createServer(app);
 const httpsServer = https.createServer({
-  key: fs.readFileSync('/etc/letsencrypt/live/{YOUR_DOMAIN_HERE}/privkey.pem'),
-  cert: fs.readFileSync('/etc/letsencrypt/live/{YOUR_DOMAIN_HERE}/fullchain.pem'),
+  key: fs.readFileSync('/etc/letsencrypt/live/{YOUR_URL}/privkey.pem'),
+  cert: fs.readFileSync('/etc/letsencrypt/live/{YOUR_URL}/fullchain.pem'),
 }, app);
 
 const httpsDownloadServer = https.createServer({
-  key: fs.readFileSync('/etc/letsencrypt/live/{YOUR_DOMAIN_HERE}/privkey.pem'),
-  cert: fs.readFileSync('/etc/letsencrypt/live/{YOUR_DOMAIN_HERE}/fullchain.pem'),
+  key: fs.readFileSync('/etc/letsencrypt/live/{YOUR_URL}/privkey.pem'),
+  cert: fs.readFileSync('/etc/letsencrypt/live/{YOUR_URL}/fullchain.pem'),
 }, app);
 
 httpsServer.listen(3000, () => {
-    console.log('mmEServer running on port 3000');
+    console.log('mmeServer running on port 3000');
 });
 
 httpServer.listen(80, () => {
@@ -185,7 +193,7 @@ httpServer.listen(80, () => {
 
 
 httpsDownloadServer.listen(443, () => {
-    console.log('mmEDownload running on port 443');
+    console.log('mmeDownload running on port 443');
 });
 
 })
