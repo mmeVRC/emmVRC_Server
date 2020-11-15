@@ -12,6 +12,6 @@ Avatar searching and storing,
 
 Rate limits so people can't crash you with message spams,
 
-URL checks to users can't upload avatars that link to resources outsideof VRChat,
+URL checks so users can't upload avatars that link to resources outside of VRChat,
 
 Other stuff I probably forgot.
