@@ -4,6 +4,8 @@ Saw this on a repo a while back and took a copy, was planning on submitting a pu
 
 Features:
 
+Pin authentication,
+
 Token generation for login, removal on logout,
 
 Messaging,
