@@ -26,8 +26,10 @@ mongo.connect(url, {
     console.error(err)
     return
   }
-    const db = client.db('mmeVRC')
+    const db = client.db('emmVRC')
     const tokens = db.collection('tokens')
+    const pins = db.collection('pins')
+    const loginKeys = db.collection('loginKeys')
     const messages = db.collection('messages')
     const avatars = db.collection('avatars')
     const blocked = db.collection('blocked')
@@ -83,18 +85,66 @@ mongo.connect(url, {
     })
 
 
-    app.post(`/api/authentication/login`,limiter, (req, res)=>{
+     app.post(`/api/authentication/login`, (req, res)=>{
+        console.log(req.body)
         blocked.findOne({userid: req.body.username}, (err, item)=>{
             if(item){
                 console.log("user is blocked!");
-                return res.status(401).json();
+                return res.status(401).json({message: "forbidden"});
             }else{
-                var newToken = crypto.randomBytes(32).toString('hex');
-                tokens.updateOne({userid: req.body.username, username: req.body.name}, {'$set': {token: newToken}}, {upsert: true}, (err, result)=>{
-                    res.json({
-                        "token": newToken,
-                        "reset": false
-                    });
+                pins.findOne({userid: req.body.username}, (err, item)=>{
+                    if(!item){
+                        console.log("no pin")
+                        if(req.body.password==req.body.username){
+                            var newToken = crypto.randomBytes(32).toString('hex');
+                            tokens.updateOne({userid: req.body.username, username: req.body.name}, {'$set': {token: newToken}}, {upsert: true}, (err, result)=>{
+                                res.json({
+                                    "token": newToken,
+                                    "reset": true
+                                });
+                            })
+                        }else{
+                            pins.insertOne({userid: req.body.username, pin: req.body.password}, ()=>{
+                                var newToken = crypto.randomBytes(32).toString('hex');
+                                tokens.updateOne({userid: req.body.username, username: req.body.name}, {'$set': {token: newToken}}, {upsert: true}, (err, result)=>{
+                                    res.json({
+                                        "token": newToken,
+                                        "reset": false
+                                    });
+                                })
+                            })
+                        }
+                    }else{
+                        loginKeys.findOne({userid: req.body.username}, (err, loginKeyItem)=>{
+                            console.log("pin")
+                            if(item.pin == req.body.password){
+                                var newToken = crypto.randomBytes(32).toString('hex');
+                                var loginKey = crypto.randomBytes(32).toString('hex');
+                                loginKeys.updateOne({userid: req.body.username}, {'$set': {loginKey: loginKey}}, {upsert: true});
+                                tokens.updateOne({userid: req.body.username, username: req.body.name}, {'$set': {token: newToken}}, {upsert: true}, (err, result)=>{
+                                    res.json({
+                                        "token": newToken,
+                                        "loginKey": loginKey,
+                                        "reset": false
+                                    });
+                                })
+                            }else if(loginKeyItem && loginKeyItem.loginKey == req.body.password){
+                                var newToken = crypto.randomBytes(32).toString('hex');
+                                var loginKey = crypto.randomBytes(32).toString('hex');
+                                loginKeys.updateOne({userid: req.body.username}, {'$set': {loginKey: loginKey}}, {upsert: true});
+                                tokens.updateOne({userid: req.body.username, username: req.body.name}, {'$set': {token: newToken}}, {upsert: true}, (err, result)=>{
+                                    res.json({
+                                        "token": newToken,
+                                        "loginKey": loginKey,
+                                        "reset": false
+                                    });
+                                })
+                            }else{
+                                console.log("invalid combination")
+                                res.status(401).json({message: "invalid combination"})
+                            }
+                        })
+                    }
                 })
             }
         })
@@ -117,14 +167,14 @@ mongo.connect(url, {
     })
 
     app.post(`/api/avatar/search`,limiter, (req, res)=>{
-        avatars.find({'$or': [{'avatar_author_name': new RegExp(req.body.query, 'i')}, {'avatar_name': new RegExp(req.body.query, 'i')}]}).toArray((err,items)=>{
+        avatars.find({'$or': [{'avatar_author_name': new RegExp(req.body.query, 'i')}, {'avatar_name': new RegExp(req.body.query, 'i')}]}).limit(150).toArray((err,items)=>{
             items.forEach(avatar=>{
                 delete avatar.userid;
                 avatar.avatar_name = Buffer.from(avatar.avatar_name).toString("base64");
                 avatar.avatar_author_name = Buffer.from(avatar.avatar_author_name).toString("base64");
             })
             res.json(items);
-            console.log(JSON.stringify(items, null, 2))
+            //console.log(JSON.stringify(items, null, 2))
         })
     })
 
@@ -174,26 +224,26 @@ mongo.connect(url, {
 
 const httpServer = http.createServer(app);
 const httpsServer = https.createServer({
-  key: fs.readFileSync('/etc/letsencrypt/live/{YOUR_URL}/privkey.pem'),
-  cert: fs.readFileSync('/etc/letsencrypt/live/{YOUR_URL}/fullchain.pem'),
+  key: fs.readFileSync('/etc/letsencrypt/live/{YOUR_DOMAIN}/privkey.pem'),
+  cert: fs.readFileSync('/etc/letsencrypt/live/{YOUR_DOMAIN}/fullchain.pem'),
 }, app);
 
 const httpsDownloadServer = https.createServer({
-  key: fs.readFileSync('/etc/letsencrypt/live/{YOUR_URL}/privkey.pem'),
-  cert: fs.readFileSync('/etc/letsencrypt/live/{YOUR_URL}/fullchain.pem'),
+  key: fs.readFileSync('/etc/letsencrypt/live/{YOUR_DOMAIN}/privkey.pem'),
+  cert: fs.readFileSync('/etc/letsencrypt/live/{YOUR_DOMAIN}/fullchain.pem'),
 }, app);
 
 httpsServer.listen(3000, () => {
-    console.log('mmeServer running on port 3000');
+    console.log('mmEServer running on port 3000');
 });
 
 httpServer.listen(80, () => {
-    console.log('mmeWeb running on port 80');
+    console.log('mmEWeb running on port 80');
 });
 
 
 httpsDownloadServer.listen(443, () => {
-    console.log('mmeDownload running on port 443');
+    console.log('mmEDownload running on port 443');
 });
 
 })
