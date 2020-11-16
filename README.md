@@ -15,3 +15,7 @@ Rate limits so people can't crash you with message spams,
 URL checks so users can't upload avatars that link to resources outside of VRChat,
 
 Other stuff I probably forgot.
+
+
+
+A public server has opened using this code, feel free to join their Discord at https://discord.gg/tTNk9tDsge
