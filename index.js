@@ -3,7 +3,7 @@ var bodyParser = require('body-parser')
 const app = express()
 app.use(require('express-status-monitor')());
 const mongo = require('mongodb').MongoClient
-const url = 'mongodb://localhost:27017/mmEVRC'
+const url = 'mongodb://localhost:27017/mmeVRC'
 const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const https = require('https');
@@ -33,6 +33,16 @@ mongo.connect(url, {
     const messages = db.collection('messages')
     const avatars = db.collection('avatars')
     const blocked = db.collection('blocked')
+
+    setInterval(()=>{
+        tokens.deleteMany({expires: {"$lt": Date.now()}}, (err, res)=>{
+            console.log(`Removed ${res.deletedCount} expired tokens`)
+        })
+        loginKeys.deleteMany({expires: {"$lt": Date.now()}}, (err, res)=>{
+            console.log(`Removed ${res.deletedCount} expired tokens`)
+        })
+    }, 600000)
+
 
     app.use('/downloads', function(req, res, next) {
 	console.log(`${req.username} -- ${req.method} ${req.path}`)
@@ -74,6 +84,8 @@ mongo.connect(url, {
 		if(req.path != "/api/message"){
               	  console.log(`${req.username} -- ${req.method} ${req.path}`)
 		}
+                tokens.updateOne({token: req.headers.authorization}, {$set: {expires: (Date.now() + 600000)}})
+                loginKeys.updateOne({userid: req.userid}, {"$set": {expires: (Date.now() + 600000)}})
                 next();
             })
         }else if(req.path=="/api/authentication/login"){
@@ -97,7 +109,7 @@ mongo.connect(url, {
                         console.log("no pin")
                         if(req.body.password==req.body.username){
                             var newToken = crypto.randomBytes(32).toString('hex');
-                            tokens.updateOne({userid: req.body.username, username: req.body.name}, {'$set': {token: newToken}}, {upsert: true}, (err, result)=>{
+                            tokens.updateOne({userid: req.body.username, username: req.body.name}, {'$set': {token: newToken, expires: (Date.now() + 600000)}}, {upsert: true}, (err, result)=>{
                                 res.json({
                                     "token": newToken,
                                     "reset": true
@@ -106,7 +118,7 @@ mongo.connect(url, {
                         }else{
                             pins.insertOne({userid: req.body.username, pin: req.body.password}, ()=>{
                                 var newToken = crypto.randomBytes(32).toString('hex');
-                                tokens.updateOne({userid: req.body.username, username: req.body.name}, {'$set': {token: newToken}}, {upsert: true}, (err, result)=>{
+                                tokens.updateOne({userid: req.body.username, username: req.body.name}, {'$set': {token: newToken, expires: (Date.now() + 600000)}}, {upsert: true}, (err, result)=>{
                                     res.json({
                                         "token": newToken,
                                         "reset": false
@@ -120,8 +132,8 @@ mongo.connect(url, {
                             if(item.pin == req.body.password){
                                 var newToken = crypto.randomBytes(32).toString('hex');
                                 var loginKey = crypto.randomBytes(32).toString('hex');
-                                loginKeys.updateOne({userid: req.body.username}, {'$set': {loginKey: loginKey}}, {upsert: true});
-                                tokens.updateOne({userid: req.body.username, username: req.body.name}, {'$set': {token: newToken}}, {upsert: true}, (err, result)=>{
+                                loginKeys.updateOne({userid: req.body.username}, {'$set': {loginKey: loginKey, expires: (Date.now() + 600000)}}, {upsert: true});
+                                tokens.updateOne({userid: req.body.username, username: req.body.name}, {'$set': {token: newToken, expires: (Date.now() + 600000)}}, {upsert: true}, (err, result)=>{
                                     res.json({
                                         "token": newToken,
                                         "loginKey": loginKey,
@@ -131,8 +143,8 @@ mongo.connect(url, {
                             }else if(loginKeyItem && loginKeyItem.loginKey == req.body.password){
                                 var newToken = crypto.randomBytes(32).toString('hex');
                                 var loginKey = crypto.randomBytes(32).toString('hex');
-                                loginKeys.updateOne({userid: req.body.username}, {'$set': {loginKey: loginKey}}, {upsert: true});
-                                tokens.updateOne({userid: req.body.username, username: req.body.name}, {'$set': {token: newToken}}, {upsert: true}, (err, result)=>{
+                                loginKeys.updateOne({userid: req.body.username}, {'$set': {loginKey: loginKey, expires: (Date.now() + 600000)}}, {upsert: true});
+                                tokens.updateOne({userid: req.body.username, username: req.body.name}, {'$set': {token: newToken, expires: (Date.now() + 600000)}}, {upsert: true}, (err, result)=>{
                                     res.json({
                                         "token": newToken,
                                         "loginKey": loginKey,
@@ -224,26 +236,26 @@ mongo.connect(url, {
 
 const httpServer = http.createServer(app);
 const httpsServer = https.createServer({
-  key: fs.readFileSync('/etc/letsencrypt/live/{YOUR_URL}/privkey.pem'),
-  cert: fs.readFileSync('/etc/letsencrypt/live/{YOUR_URL}/fullchain.pem'),
+  key: fs.readFileSync('/etc/letsencrypt/live/{YOUR_WEBSITE}/privkey.pem'),
+  cert: fs.readFileSync('/etc/letsencrypt/live/{YOUR_WEBSITE}/fullchain.pem'),
 }, app);
 
 const httpsDownloadServer = https.createServer({
-  key: fs.readFileSync('/etc/letsencrypt/live/{YOUR_URL}/privkey.pem'),
-  cert: fs.readFileSync('/etc/letsencrypt/live/{YOUR_URL}/fullchain.pem'),
+  key: fs.readFileSync('/etc/letsencrypt/live/{YOUR_WEBSITE}/privkey.pem'),
+  cert: fs.readFileSync('/etc/letsencrypt/live/{YOUR_WEBSITE}/fullchain.pem'),
 }, app);
 
 httpsServer.listen(3000, () => {
-    console.log('mmEServer running on port 3000');
+    console.log('mmeServer running on port 3000');
 });
 
 httpServer.listen(80, () => {
-    console.log('mmEWeb running on port 80');
+    console.log('mmeWeb running on port 80');
 });
 
 
 httpsDownloadServer.listen(443, () => {
-    console.log('mmEDownload running on port 443');
+    console.log('mmeDownload running on port 443');
 });
 
 })
