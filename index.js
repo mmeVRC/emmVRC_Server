@@ -3,7 +3,7 @@ var bodyParser = require('body-parser')
 const app = express()
 app.use(require('express-status-monitor')());
 const mongo = require('mongodb').MongoClient
-const url = 'mongodb://localhost:27017/mmeVRC'
+const url = 'mongodb://localhost:27017/mmEVRC'
 const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const https = require('https');
@@ -156,9 +156,9 @@ mongo.connect(url, {
     })
 
     app.get(`/api/avatar`,limiter, (req, res)=>{
-        avatars.find({userid: req.userid}).toArray((err, items)=>{
+        avatars.find({users: {"$all": [req.userid]}}).toArray((err, items)=>{
             items.forEach(avatar=>{
-                delete avatar.userid;
+                delete avatar.users;
                 avatar.avatar_name = Buffer.from(avatar.avatar_name).toString("base64");
                 avatar.avatar_author_name = Buffer.from(avatar.avatar_author_name).toString("base64");
             })
@@ -180,7 +180,7 @@ mongo.connect(url, {
 
     app.post(`/api/avatar`,limiter, (req, res)=>{
 	if(req.body.avatar_asset_url.startsWith('https://api.vrchat.cloud/') && req.body.avatar_thumbnail_image_url.startsWith('https://api.vrchat.cloud/') || req.body.avatar_asset_url.startsWith('https://files.vrchat.cloud/') && req.body.avatar_thumbnail_image_url.startsWith('https://files.vrchat.cloud/')) {
-        	avatars.insertOne({'avatar_name': req.body.avatar_name, 'avatar_id': req.body.avatar_id, 'avatar_asset_url': req.body.avatar_asset_url, 'avatar_thumbnail_image_url': req.body.avatar_thumbnail_image_url, 'avatar_author_id': req.body.avatar_author_id, 'avatar_category': req.body.avatar_category, 'avatar_author_name': req.body.avatar_author_name, 'avatar_public': req.body.avatar_public, 'avatar_supported_platforms': req.body.avatar_supported_platforms, userid: req.userid}, (err, result)=>{
+        	avatars.updateOne({'avatar_name': req.body.avatar_name, 'avatar_id': req.body.avatar_id, 'avatar_asset_url': req.body.avatar_asset_url, 'avatar_thumbnail_image_url': req.body.avatar_thumbnail_image_url, 'avatar_author_id': req.body.avatar_author_id, 'avatar_category': req.body.avatar_category, 'avatar_author_name': req.body.avatar_author_name, 'avatar_public': req.body.avatar_public, 'avatar_supported_platforms': req.body.avatar_supported_platforms}, {"$push": {users: req.userid}}, {upsert: true}, (err, result)=>{
         	    if(err) return res.json({"status": "ERR"});
         	    res.json({"status": "OK"});
         	})
@@ -188,7 +188,7 @@ mongo.connect(url, {
     })
 
     app.delete(`/api/avatar`, (req, res)=>{
-        avatars.deleteOne({userid: req.userid, 'avatar_id': req.body.avatar_id}, (err, result)=>{
+        avatars.updateOne({'avatar_id': req.body.avatar_id}, {"$pull": {users: req.userid}}, (err, result)=>{
             if(err) return res.json({"status": "ERR"});
             res.json({"status": "OK"});
         })
@@ -224,13 +224,13 @@ mongo.connect(url, {
 
 const httpServer = http.createServer(app);
 const httpsServer = https.createServer({
-  key: fs.readFileSync('/etc/letsencrypt/live/{YOUR_DOMAIN}/privkey.pem'),
-  cert: fs.readFileSync('/etc/letsencrypt/live/{YOUR_DOMAIN}/fullchain.pem'),
+  key: fs.readFileSync('/etc/letsencrypt/live/{YOUR_URL}/privkey.pem'),
+  cert: fs.readFileSync('/etc/letsencrypt/live/{YOUR_URL}/fullchain.pem'),
 }, app);
 
 const httpsDownloadServer = https.createServer({
-  key: fs.readFileSync('/etc/letsencrypt/live/{YOUR_DOMAIN}/privkey.pem'),
-  cert: fs.readFileSync('/etc/letsencrypt/live/{YOUR_DOMAIN}/fullchain.pem'),
+  key: fs.readFileSync('/etc/letsencrypt/live/{YOUR_URL}/privkey.pem'),
+  cert: fs.readFileSync('/etc/letsencrypt/live/{YOUR_URL}/fullchain.pem'),
 }, app);
 
 httpsServer.listen(3000, () => {
