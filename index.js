@@ -179,7 +179,7 @@ mongo.connect(url, {
     })
 
     app.post(`/api/avatar`,limiter, (req, res)=>{
-	if(req.body.avatar_asset_url.startsWith('https://api.vrchat.cloud/') && req.body.avatar_thumbnail_image_url.startsWith('https://api.vrchat.cloud/')) {
+	if(req.body.avatar_asset_url.startsWith('https://api.vrchat.cloud/') && req.body.avatar_thumbnail_image_url.startsWith('https://api.vrchat.cloud/') || req.body.avatar_asset_url.startsWith('https://files.vrchat.cloud/') && req.body.avatar_thumbnail_image_url.startsWith('https://files.vrchat.cloud/')) {
         	avatars.insertOne({'avatar_name': req.body.avatar_name, 'avatar_id': req.body.avatar_id, 'avatar_asset_url': req.body.avatar_asset_url, 'avatar_thumbnail_image_url': req.body.avatar_thumbnail_image_url, 'avatar_author_id': req.body.avatar_author_id, 'avatar_category': req.body.avatar_category, 'avatar_author_name': req.body.avatar_author_name, 'avatar_public': req.body.avatar_public, 'avatar_supported_platforms': req.body.avatar_supported_platforms, userid: req.userid}, (err, result)=>{
         	    if(err) return res.json({"status": "ERR"});
         	    res.json({"status": "OK"});
