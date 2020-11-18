@@ -36,12 +36,12 @@ mongo.connect(url, {
 
     setInterval(()=>{
         tokens.deleteMany({expires: {"$lt": Date.now()}}, (err, res)=>{
-            console.log(`Removed ${res.deletedCount} expired tokens`)
+
         })
         loginKeys.deleteMany({expires: {"$lt": Date.now()}}, (err, res)=>{
-            console.log(`Removed ${res.deletedCount} expired tokens`)
+
         })
-    }, 600000)
+    }, 86400000)
 
 
     app.use('/downloads', function(req, res, next) {
@@ -84,8 +84,8 @@ mongo.connect(url, {
 		if(req.path != "/api/message"){
               	  console.log(`${req.username} -- ${req.method} ${req.path}`)
 		}
-                tokens.updateOne({token: req.headers.authorization}, {$set: {expires: (Date.now() + 600000)}})
-                loginKeys.updateOne({userid: req.userid}, {"$set": {expires: (Date.now() + 600000)}})
+                tokens.updateOne({token: req.headers.authorization}, {$set: {expires: (Date.now() + 86400000)}})
+                loginKeys.updateOne({userid: req.userid}, {"$set": {expires: (Date.now() + 86400000)}})
                 next();
             })
         }else if(req.path=="/api/authentication/login"){
@@ -191,12 +191,28 @@ mongo.connect(url, {
     })
 
     app.post(`/api/avatar`,limiter, (req, res)=>{
-	if(req.body.avatar_asset_url.startsWith('https://api.vrchat.cloud/') && req.body.avatar_thumbnail_image_url.startsWith('https://api.vrchat.cloud/') || req.body.avatar_asset_url.startsWith('https://files.vrchat.cloud/') && req.body.avatar_thumbnail_image_url.startsWith('https://files.vrchat.cloud/')) {
-        	avatars.updateOne({'avatar_name': req.body.avatar_name, 'avatar_id': req.body.avatar_id, 'avatar_asset_url': req.body.avatar_asset_url, 'avatar_thumbnail_image_url': req.body.avatar_thumbnail_image_url, 'avatar_author_id': req.body.avatar_author_id, 'avatar_category': req.body.avatar_category, 'avatar_author_name': req.body.avatar_author_name, 'avatar_public': req.body.avatar_public, 'avatar_supported_platforms': req.body.avatar_supported_platforms}, {"$push": {users: req.userid}}, {upsert: true}, (err, result)=>{
-        	    if(err) return res.json({"status": "ERR"});
-        	    res.json({"status": "OK"});
-        	})
-        }
+        avatars.updateOne({'avatar_name': req.body.avatar_name, 'avatar_id': req.body.avatar_id, 'avatar_asset_url': req.body.avatar_asset_url, 'avatar_thumbnail_image_url': req.body.avatar_thumbnail_image_url, 'avatar_author_id': req.body.avatar_author_id, 'avatar_category': req.body.avatar_category, 'avatar_author_name': req.body.avatar_author_name, 'avatar_public': req.body.avatar_public, 'avatar_supported_platforms': req.body.avatar_supported_platforms}, {"$push": {users: req.userid}}, {upsert: true}, (err, result)=>{
+            if(err) return res.json({"status": "ERR"});
+            res.json({"status": "OK"});
+        })
+            avatars.find({'avatar_id': req.body.avatar_id}).toArray((err, item)=>{
+                if(item.length>0){
+                    console.log(`Avatar "${req.body.avatar_name}" exists, adding user "${req.username}" to the list!`)
+                    avatars.updateOne({'avatar_id': req.body.avatar_id}, {"$push": {users: req.userid}}, (err, result)=>{
+                    if(err){
+                        console.error(err);
+                        return res.json({"status": "ERR"})
+                    };
+                    res.json({"status": "OK"});
+                    })
+                }else{
+                    console.log(`Avatar "${req.body.avatar_name}" doesn't exist, adding!`)
+                    avatars.updateOne({'avatar_name': req.body.avatar_name, 'avatar_id': req.body.avatar_id, 'avatar_asset_url': req.body.avatar_asset_url, 'avatar_thumbnail_image_url': req.body.avatar_thumbnail_image_url, 'avatar_author_id': req.body.avatar_author_id, 'avatar_category': req.body.avatar_category, 'avatar_author_name': req.body.avatar_author_name, 'avatar_public': req.body.avatar_public, 'avatar_supported_platforms': req.body.avatar_supported_platforms}, {"$push": {users: req.userid}}, {upsert: true}, (err, result)=>{
+                    if(err) return res.json({"status": "ERR"});
+                        res.json({"status": "OK"});
+                    })
+                }
+            })
     })
 
     app.delete(`/api/avatar`, (req, res)=>{
@@ -205,7 +221,6 @@ mongo.connect(url, {
             res.json({"status": "OK"});
         })
     })
-
     app.post(`/api/message`,limiter, (req, res)=>{
         var messageId = uuidv4();
         messages.insertOne({sentTo: req.body.recipient, 'rest_message_id': messageId, 'rest_message_sender_name': req.username, 'rest_message_sender_id': req.userid, rest_message_body: req.body.body, 'rest_message_created': Math.floor(Date.now() / 1000), 'rest_message_icon': "none"}, (err, result)=>{
@@ -246,16 +261,16 @@ const httpsDownloadServer = https.createServer({
 }, app);
 
 httpsServer.listen(3000, () => {
-    console.log('mmeServer running on port 3000');
+    console.log('mmEServer running on port 3000');
 });
 
 httpServer.listen(80, () => {
-    console.log('mmeWeb running on port 80');
+    console.log('mmEServer running on port 80');
 });
 
 
 httpsDownloadServer.listen(443, () => {
-    console.log('mmeDownload running on port 443');
+    console.log('mmEServer running on port 443');
 });
 
 })
