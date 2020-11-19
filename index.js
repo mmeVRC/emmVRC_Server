@@ -191,10 +191,6 @@ mongo.connect(url, {
     })
 
     app.post(`/api/avatar`,limiter, (req, res)=>{
-        avatars.updateOne({'avatar_name': req.body.avatar_name, 'avatar_id': req.body.avatar_id, 'avatar_asset_url': req.body.avatar_asset_url, 'avatar_thumbnail_image_url': req.body.avatar_thumbnail_image_url, 'avatar_author_id': req.body.avatar_author_id, 'avatar_category': req.body.avatar_category, 'avatar_author_name': req.body.avatar_author_name, 'avatar_public': req.body.avatar_public, 'avatar_supported_platforms': req.body.avatar_supported_platforms}, {"$push": {users: req.userid}}, {upsert: true}, (err, result)=>{
-            if(err) return res.json({"status": "ERR"});
-            res.json({"status": "OK"});
-        })
             avatars.find({'avatar_id': req.body.avatar_id}).toArray((err, item)=>{
                 if(item.length>0){
                     console.log(`Avatar "${req.body.avatar_name}" exists, adding user "${req.username}" to the list!`)
