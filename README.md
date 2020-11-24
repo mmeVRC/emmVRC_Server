@@ -2,6 +2,8 @@
 
 Saw this on a repo a while back and took a copy, was planning on submitting a pull request but it seems the original repo has been taken down. You can figure out what to do to get it running from the code, it's very basic and probably very hackable.
 
+So our new repo "VRC_Checkers" is now required for this to function. It's a MySQL backed PHP script which checks if a user ID and avatar ID is valid before sending it to the database. Why is it not baked into the server? because if we get IP banned / need to load balance it having it as a sperate app is easier.
+
 Features:
 
 Pin authentication,
