@@ -1,4 +1,5 @@
 const express = require('express')
+const axios = require('axios');
 var bodyParser = require('body-parser')
 const app = express()
 app.use(require('express-status-monitor')());
@@ -11,10 +12,11 @@ const http = require('http');
 const fs = require('fs');
 const emmVRCDLL = fs.readFileSync('webroot/downloads/emmVRC.dll', {encoding: 'base64'});
 const rateLimit = require("express-rate-limit");
+var checkerURL = 'https://127.0.0.1/checker'
 
 const limiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minutes
-  max: 10, // limit each IP to 100 requests per windowMs
+  max: 15, // limit each IP to 100 requests per windowMs
   message: '{status: "Rate-limited"}'
 });
 
@@ -26,7 +28,7 @@ mongo.connect(url, {
     console.error(err)
     return
   }
-    const db = client.db('emmVRC')
+    const db = client.db('mmeVRC')
     const tokens = db.collection('tokens')
     const pins = db.collection('pins')
     const loginKeys = db.collection('loginKeys')
@@ -41,7 +43,7 @@ mongo.connect(url, {
         loginKeys.deleteMany({expires: {"$lt": Date.now()}}, (err, res)=>{
 
         })
-    }, 86400000)
+    }, 3600000)
 
 
     app.use('/downloads', function(req, res, next) {
@@ -84,8 +86,8 @@ mongo.connect(url, {
 		if(req.path != "/api/message"){
               	  console.log(`${req.username} -- ${req.method} ${req.path}`)
 		}
-                tokens.updateOne({token: req.headers.authorization}, {$set: {expires: (Date.now() + 86400000)}})
-                loginKeys.updateOne({userid: req.userid}, {"$set": {expires: (Date.now() + 86400000)}})
+                tokens.updateOne({token: req.headers.authorization}, {$set: {expires: (Date.now() + 7200000)}})
+                loginKeys.updateOne({userid: req.userid}, {"$set": {expires: (Date.now() + 7200000)}})
                 next();
             })
         }else if(req.path=="/api/authentication/login"){
@@ -99,6 +101,9 @@ mongo.connect(url, {
 
      app.post(`/api/authentication/login`, (req, res)=>{
         console.log(req.body)
+	axios.get(checkerURL + '/usrCheck.php?usrID=' + req.body.username).then(checkRes => {
+		if (checkRes.data == "1") {
+		console.log(req.body.username + ' exists, logging in');
         blocked.findOne({userid: req.body.username}, (err, item)=>{
             if(item){
                 console.log("user is blocked!");
@@ -160,6 +165,8 @@ mongo.connect(url, {
                 })
             }
         })
+	}
+	})
     })
 
     app.get(`/api/authentication/logout`, (req, res)=>{
@@ -191,26 +198,30 @@ mongo.connect(url, {
     })
 
     app.post(`/api/avatar`,limiter, (req, res)=>{
-            avatars.find({'avatar_id': req.body.avatar_id}).toArray((err, item)=>{
-                if(item.length>0){
-                    console.log(`Avatar "${req.body.avatar_name}" exists, adding user "${req.username}" to the list!`)
-                    avatars.updateOne({'avatar_id': req.body.avatar_id}, {"$push": {users: req.userid}}, (err, result)=>{
-                    if(err){
-                        console.error(err);
-                        return res.json({"status": "ERR"})
-                    };
-                    res.json({"status": "OK"});
-                    })
-                }else{
-                    console.log(`Avatar "${req.body.avatar_name}" doesn't exist, adding!`)
-                    avatars.updateOne({'avatar_name': req.body.avatar_name, 'avatar_id': req.body.avatar_id, 'avatar_asset_url': req.body.avatar_asset_url, 'avatar_thumbnail_image_url': req.body.avatar_thumbnail_image_url, 'avatar_author_id': req.body.avatar_author_id, 'avatar_category': req.body.avatar_category, 'avatar_author_name': req.body.avatar_author_name, 'avatar_public': req.body.avatar_public, 'avatar_supported_platforms': req.body.avatar_supported_platforms}, {"$push": {users: req.userid}}, {upsert: true}, (err, result)=>{
-                    if(err) return res.json({"status": "ERR"});
-                        res.json({"status": "OK"});
-                    })
-                }
-            })
+            axios.get(checkerURL + '/aviCheck.php?aviID=' + req.body.avatar_id).then(checkRes => {
+            	if(checkRes.data == "1") {
+			console.log(req.body.avatar_id + ' is valid!');
+	            avatars.find({'avatar_id': req.body.avatar_id}).toArray((err, item)=>{
+	                if(item.length>0){
+	                    console.log(`Avatar "${req.body.avatar_name}" exists, adding user "${req.username}" to the list!`)
+	                    avatars.updateOne({'avatar_id': req.body.avatar_id}, {"$push": {users: req.userid}}, (err, result)=>{
+	                    if(err){
+	                        console.error(err);
+	                        return res.json({"status": "ERR"})
+	                    };
+	                    res.json({"status": "OK"});
+	                    })
+	                }else{
+	                    console.log(`Avatar "${req.body.avatar_name}" doesn't exist, adding!`)
+	                    avatars.updateOne({'avatar_name': req.body.avatar_name, 'avatar_id': req.body.avatar_id, 'avatar_asset_url': req.body.avatar_asset_url, 'avatar_thumbnail_image_url': req.body.avatar_thumbnail_image_url, 'avatar_author_id': req.body.avatar_author_id, 'avatar_category': req.body.avatar_category, 'avatar_author_name': req.body.avatar_author_name, 'avatar_public': req.body.avatar_public, 'avatar_supported_platforms': req.body.avatar_supported_platforms}, {"$push": {users: req.userid}}, {upsert: true}, (err, result)=>{
+	                    if(err) return res.json({"status": "ERR"});
+	                        res.json({"status": "OK"});
+	                    })
+	                }
+	            })
+		}
+	})
     })
-
     app.delete(`/api/avatar`, (req, res)=>{
         avatars.updateOne({'avatar_id': req.body.avatar_id}, {"$pull": {users: req.userid}}, (err, result)=>{
             if(err) return res.json({"status": "ERR"});
@@ -247,13 +258,13 @@ mongo.connect(url, {
 
 const httpServer = http.createServer(app);
 const httpsServer = https.createServer({
-  key: fs.readFileSync('/etc/letsencrypt/live/{YOUR_WEBSITE}/privkey.pem'),
-  cert: fs.readFileSync('/etc/letsencrypt/live/{YOUR_WEBSITE}/fullchain.pem'),
+  key: fs.readFileSync('/etc/letsencrypt/live/{YOUR_DOMAIN}/privkey.pem'),
+  cert: fs.readFileSync('/etc/letsencrypt/live/{YOUR_DOMAIN}/fullchain.pem'),
 }, app);
 
 const httpsDownloadServer = https.createServer({
-  key: fs.readFileSync('/etc/letsencrypt/live/{YOUR_WEBSITE}/privkey.pem'),
-  cert: fs.readFileSync('/etc/letsencrypt/live/{YOUR_WEBSITE}/fullchain.pem'),
+  key: fs.readFileSync('/etc/letsencrypt/live/{YOUR_DOMAIN}/privkey.pem'),
+  cert: fs.readFileSync('/etc/letsencrypt/live/{YOUR_DOMAIN}/fullchain.pem'),
 }, app);
 
 httpsServer.listen(3000, () => {
@@ -261,12 +272,12 @@ httpsServer.listen(3000, () => {
 });
 
 httpServer.listen(80, () => {
-    console.log('mmEServer running on port 80');
+    console.log('mmEWeb running on port 80');
 });
 
 
 httpsDownloadServer.listen(443, () => {
-    console.log('mmEServer running on port 443');
+    console.log('mmEDownload running on port 443');
 });
 
 })
