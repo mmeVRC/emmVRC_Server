@@ -4,15 +4,16 @@ var bodyParser = require('body-parser')
 const app = express()
 app.use(require('express-status-monitor')());
 const mongo = require('mongodb').MongoClient
-const url = 'mongodb://localhost:27017/mmeVRC'
+const url = 'mongodb://localhost:27017/mmEVRC'
 const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const https = require('https');
 const http = require('http');
-const fs = require('fs');
+const bcrypt = require('bcrypt');
+const { read } = require('fs')
 const emmVRCDLL = fs.readFileSync('webroot/downloads/emmVRC.dll', {encoding: 'base64'});
 const rateLimit = require("express-rate-limit");
-var checkerURL = 'https://127.0.0.1/checker'
+var checkerURL = 'http://127.0.0.1/checker'
 
 const limiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minutes
@@ -28,7 +29,7 @@ mongo.connect(url, {
     console.error(err)
     return
   }
-    const db = client.db('mmeVRC')
+    const db = client.db('mmEVRC')
     const tokens = db.collection('tokens')
     const pins = db.collection('pins')
     const loginKeys = db.collection('loginKeys')
@@ -47,28 +48,28 @@ mongo.connect(url, {
 
 
     app.use('/downloads', function(req, res, next) {
-	console.log(`${req.username} -- ${req.method} ${req.path}`)
+	console.log(`${req.ip} -- ${req.method} ${req.path}`)
 	next();
     }, express.static('webroot/downloads'))
 
     app.use('/img', function(req, res, next) {
-	console.log(`${req.username} -- ${req.method} img${req.path}`)
+	console.log(`${req.ip} -- ${req.method} img${req.path}`)
 	next();
     }, express.static('webroot/img'))
 
     app.use('/RiskyFuncsCheck.php', function(req, res) {
-	console.log(`${req.username} -- ${req.method} RiskyFuncsCheck.php`)
+	console.log(`${req.ip} -- ${req.method} RiskyFuncsCheck.php`)
 	res.send('allowed')
     });
 
     app.use('/BakaUpdate.php', function(req, res) {
-	if(req.query.shouldload === ''){res.send('true')}
-	if(req.query.libdownload === ''){res.send(emmVRCDLL)}
-	console.log(`${req.username} -- ${req.method} BakaUpdate.php`)
+	if(req.query.shouldload === ''){res.send('true'); console.log("Should Download")}
+	if(req.query.libdownload === ''){res.send(emmVRCDLL); console.log("Sending main binary")}
+	console.log(`${req.ip} -- ${req.method} BakaUpdate.php`)
     });
 
     app.use('/configuration.php', function(req, res) {
-	console.log(`${req.username} -- ${req.method} configuration.php`)
+	console.log(`${req.ip} -- ${req.method} configuration.php`)
 	res.send('{ "MessageUpdateRate": 10, "DisableAuthFile": false, "DeleteAndDisableAuthFile": false, "DisableAvatarChecks": true, "APICallsAllowed": true }')
     });
 
@@ -99,9 +100,9 @@ mongo.connect(url, {
     })
 
 
-     app.post(`/api/authentication/login`, (req, res)=>{
+     app.post(`/api/authentication/login`,limiter, (req, res)=>{
         console.log(req.body)
-	axios.get(checkerURL + '/usrCheck.php?usrID=' + req.body.username).then(checkRes => {
+	axios.get(checkerURL + '/usrCheck?usrID=' + req.body.username).then(checkRes => {
 		if (checkRes.data == "1") {
 		console.log(req.body.username + ' exists, logging in');
         blocked.findOne({userid: req.body.username}, (err, item)=>{
@@ -114,52 +115,57 @@ mongo.connect(url, {
                         console.log("no pin")
                         if(req.body.password==req.body.username){
                             var newToken = crypto.randomBytes(32).toString('hex');
-                            tokens.updateOne({userid: req.body.username, username: req.body.name}, {'$set': {token: newToken, expires: (Date.now() + 600000)}}, {upsert: true}, (err, result)=>{
+                            tokens.updateOne({userid: req.body.username, username: req.body.name}, {'$set': {token: newToken, expires: (Date.now() + 600000), userIP: req.ip}}, {upsert: true}, (err, result)=>{
                                 res.json({
                                     "token": newToken,
                                     "reset": true
                                 });
                             })
                         }else{
-                            pins.insertOne({userid: req.body.username, pin: req.body.password}, ()=>{
-                                var newToken = crypto.randomBytes(32).toString('hex');
-                                tokens.updateOne({userid: req.body.username, username: req.body.name}, {'$set': {token: newToken, expires: (Date.now() + 600000)}}, {upsert: true}, (err, result)=>{
-                                    res.json({
-                                        "token": newToken,
-                                        "reset": false
-                                    });
+                            bcrypt.hash(req.body.password,10, (err, hashedPin)=>{
+                                pins.insertOne({userid: req.body.username, pin: hashedPin, username: req.body.name, userIP: req.ip}, ()=>{
+                                    var newToken = crypto.randomBytes(32).toString('hex');
+                                    tokens.updateOne({userid: req.body.username, username: req.body.name}, {'$set': {token: newToken, expires: (Date.now() + 600000)}}, {upsert: true}, (err, result)=>{
+                                        res.json({
+                                            "token": newToken,
+                                            "reset": false
+                                        });
+                                    })
                                 })
                             })
                         }
                     }else{
                         loginKeys.findOne({userid: req.body.username}, (err, loginKeyItem)=>{
+                            bcrypt.compare(req.body.password, item.pin, (err, match)=>{
+                                if(match){
+                                    pins.updateOne({userid: req.body.username}, {$set: {username: req.body.name, userIP: req.ip}});
+                                    var newToken = crypto.randomBytes(32).toString('hex');
+                                    var loginKey = crypto.randomBytes(32).toString('hex');
+                                    loginKeys.updateOne({userid: req.body.username}, {'$set': {loginKey: loginKey, expires: (Date.now() + 600000)}}, {upsert: true});
+                                    tokens.updateOne({userid: req.body.username, username: req.body.name}, {'$set': {token: newToken, expires: (Date.now() + 600000)}}, {upsert: true}, (err, result)=>{
+                                        res.json({
+                                            "token": newToken,
+                                            "loginKey": loginKey,
+                                            "reset": false
+                                        });
+                                    })
+                                }else if(loginKeyItem && loginKeyItem.loginKey == req.body.password){
+                                    var newToken = crypto.randomBytes(32).toString('hex');
+                                    var loginKey = crypto.randomBytes(32).toString('hex');
+                                    loginKeys.updateOne({userid: req.body.username}, {'$set': {loginKey: loginKey, expires: (Date.now() + 600000)}}, {upsert: true});
+                                    tokens.updateOne({userid: req.body.username, username: req.body.name}, {'$set': {token: newToken, expires: (Date.now() + 600000)}}, {upsert: true}, (err, result)=>{
+                                        res.json({
+                                            "token": newToken,
+                                            "loginKey": loginKey,
+                                            "reset": false
+                                        });
+                                    })
+                                }else{
+                                    console.log("invalid combination")
+                                    res.status(401).json({message: "invalid combination"})
+                                }
+                            })
                             console.log("pin")
-                            if(item.pin == req.body.password){
-                                var newToken = crypto.randomBytes(32).toString('hex');
-                                var loginKey = crypto.randomBytes(32).toString('hex');
-                                loginKeys.updateOne({userid: req.body.username}, {'$set': {loginKey: loginKey, expires: (Date.now() + 600000)}}, {upsert: true});
-                                tokens.updateOne({userid: req.body.username, username: req.body.name}, {'$set': {token: newToken, expires: (Date.now() + 600000)}}, {upsert: true}, (err, result)=>{
-                                    res.json({
-                                        "token": newToken,
-                                        "loginKey": loginKey,
-                                        "reset": false
-                                    });
-                                })
-                            }else if(loginKeyItem && loginKeyItem.loginKey == req.body.password){
-                                var newToken = crypto.randomBytes(32).toString('hex');
-                                var loginKey = crypto.randomBytes(32).toString('hex');
-                                loginKeys.updateOne({userid: req.body.username}, {'$set': {loginKey: loginKey, expires: (Date.now() + 600000)}}, {upsert: true});
-                                tokens.updateOne({userid: req.body.username, username: req.body.name}, {'$set': {token: newToken, expires: (Date.now() + 600000)}}, {upsert: true}, (err, result)=>{
-                                    res.json({
-                                        "token": newToken,
-                                        "loginKey": loginKey,
-                                        "reset": false
-                                    });
-                                })
-                            }else{
-                                console.log("invalid combination")
-                                res.status(401).json({message: "invalid combination"})
-                            }
                         })
                     }
                 })
@@ -170,6 +176,7 @@ mongo.connect(url, {
     })
 
     app.get(`/api/authentication/logout`, (req, res)=>{
+	loginKeys.deleteOne({userid: req.userid});
         tokens.deleteOne({userid: req.userid});
         res.json({status: "OK"});
     })
@@ -198,7 +205,7 @@ mongo.connect(url, {
     })
 
     app.post(`/api/avatar`,limiter, (req, res)=>{
-            axios.get(checkerURL + '/aviCheck.php?aviID=' + req.body.avatar_id).then(checkRes => {
+            axios.get(checkerURL + '/aviCheck?aviID=' + req.body.avatar_id).then(checkRes => {
             	if(checkRes.data == "1") {
 			console.log(req.body.avatar_id + ' is valid!');
 	            avatars.find({'avatar_id': req.body.avatar_id}).toArray((err, item)=>{
